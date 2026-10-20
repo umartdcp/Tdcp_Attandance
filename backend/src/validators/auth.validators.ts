@@ -1,0 +1,10 @@
+import { z } from 'zod';
+
+export const loginSchema = z.object({
+  username: z.string().min(3).max(64),
+  password: z.string().min(6).max(128),
+});
+
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(20),
+});

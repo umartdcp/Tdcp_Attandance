@@ -1,0 +1,16 @@
+{
+  "name": "tdcp-attendance-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TDCP Universal Attendance Management System monorepo",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "migrate": "npm --prefix backend run migrate",
+    "seed": "npm --prefix backend run seed",
+    "test:backend": "npm --prefix backend run test",
+    "setup": "npm --prefix backend install && npm --prefix frontend install && npm --prefix backend run migrate && npm --prefix backend run seed"
+  }
+}
