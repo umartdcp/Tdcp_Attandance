@@ -2,9 +2,10 @@ import { RowDataPacket } from 'mysql2/promise';
 import { closePool, execute, getPool } from '../config/database';
 import { env } from '../config/env';
 import * as core from './migrations/001_core';
+import * as employeeProfile from './migrations/002_employee_device_profile';
 import { logger } from '../utils/logger';
 
-const MIGRATIONS = [core];
+const MIGRATIONS = [core, employeeProfile];
 
 async function ensureMigrationsTable(): Promise<void> {
   await getPool().query(

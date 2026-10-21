@@ -8,6 +8,7 @@ import deviceRoutes from './device.routes';
 import shiftRoutes from './shift.routes';
 import leaveRoutes from './leave.routes';
 import healthRoutes from './health.routes';
+import userRoutes from './user.routes';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use('/reports', reportRoutes);
 router.use('/devices', deviceRoutes);
 router.use('/shifts', shiftRoutes);
 router.use('/leave', leaveRoutes);
+router.use('/users', userRoutes);
 
 export default router;

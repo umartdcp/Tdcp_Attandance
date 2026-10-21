@@ -8,6 +8,7 @@ const router = Router();
 
 router.use(authenticate);
 router.get('/regions/list', requirePermissions('locations.view'), resortController.regions);
+router.get('/reverse-geocode', requirePermissions('locations.manage'), resortController.reverseGeocode);
 router.get('/', requirePermissions('locations.view'), resortController.list);
 router.get('/:id', requirePermissions('locations.view'), resortController.getById);
 router.post(

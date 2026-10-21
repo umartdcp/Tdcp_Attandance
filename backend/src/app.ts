@@ -7,6 +7,7 @@ import { env } from './config/env';
 import { logger } from './utils/logger';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import routes from './routes';
+import iclockRouter from './iclock/router';
 import { startSyncScheduler } from './jobs/sync-scheduler';
 
 const app = express();
@@ -19,6 +20,7 @@ app.use(
     credentials: true,
   })
 );
+app.use('/iclock', iclockRouter);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(

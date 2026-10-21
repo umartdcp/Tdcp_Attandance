@@ -8,30 +8,45 @@ import {
   CalendarDays,
   FileBarChart2,
   Settings,
+  UserCog,
   Bell,
   Menu,
   LogOut,
   ChevronLeft,
-  Building2,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { LiveProvider, useLive } from '../contexts/LiveContext';
+import Logo from '../components/Logo';
 import clsx from 'clsx';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'attendance.view' },
+  { to: '/setup', label: 'Office setup', icon: ClipboardList, permission: 'locations.view' },
   { to: '/employees', label: 'Employees', icon: Users, permission: 'employees.view' },
-  { to: '/resorts', label: 'Locations', icon: MapPin, permission: 'locations.view' },
+  { to: '/sites', label: 'TDCP Sites', icon: MapPin, permission: 'locations.view' },
   { to: '/attendance', label: 'Attendance', icon: CalendarDays, permission: 'attendance.view' },
   { to: '/devices', label: 'Devices', icon: Fingerprint, permission: 'devices.manage' },
   { to: '/reports', label: 'Reports', icon: FileBarChart2, permission: 'reports.view' },
-  { to: '/settings', label: 'Settings', icon: Settings, permission: 'settings.manage' },
+  { to: '/users', label: 'Users and roles', icon: UserCog, permission: 'users.manage' },
+  { to: '/settings', label: 'Settings', icon: Settings, permission: 'attendance.view' },
 ];
 
 export default function DashboardLayout() {
+  return (
+    <LiveProvider>
+      <DashboardShell />
+    </LiveProvider>
+  );
+}
+
+function DashboardShell() {
   const { user, logout, hasPermission } = useAuth();
+  const { notices, enableNotifications, clearNotices } = useLive();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
 
   const visibleNav = navItems.filter((item) => hasPermission(item.permission));
 
@@ -50,16 +65,8 @@ export default function DashboardLayout() {
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
       >
-        <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-tdcp-green shrink-0">
-            <Building2 className="h-5 w-5" />
-          </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <p className="font-display text-sm font-bold tracking-wide truncate">TDCP</p>
-              <p className="text-[11px] text-white/60 truncate">Attendance System</p>
-            </div>
-          )}
+        <div className="flex items-center gap-3 px-3 h-20 border-b border-white/10">
+          <Logo variant="white" className={clsx('object-contain', collapsed ? 'h-10 w-10' : 'h-12 w-full')} />
         </div>
 
         <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
@@ -111,16 +118,47 @@ export default function DashboardLayout() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div>
-              <p className="text-xs text-slate-500">Tourism Development Corporation of Punjab</p>
-              <p className="text-sm font-semibold text-tdcp-navy">Universal Attendance</p>
-            </div>
+            <Logo variant="green" className="hidden sm:block h-10 w-auto object-contain" />
           </div>
 
           <div className="flex items-center gap-3">
-            <button type="button" className="relative p-2 rounded-lg hover:bg-tdcp-surface text-slate-600">
-              <Bell className="h-5 w-5" />
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                className="relative p-2 rounded-lg hover:bg-tdcp-surface text-slate-600"
+                onClick={() => {
+                  enableNotifications();
+                  setBellOpen((open) => !open);
+                }}
+                title="Notifications"
+              >
+                <Bell className="h-5 w-5" />
+                {notices.length > 0 && (
+                  <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-tdcp-green" />
+                )}
+              </button>
+              {bellOpen && (
+                <div className="absolute right-0 mt-2 w-80 rounded-xl border border-tdcp-border bg-white shadow-lg p-3 z-30">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-tdcp-navy">Live updates</p>
+                    <button type="button" className="text-xs text-tdcp-green" onClick={clearNotices}>
+                      Clear
+                    </button>
+                  </div>
+                  {notices.length === 0 ? (
+                    <p className="text-sm text-slate-500">No new employees yet. Updates appear here automatically.</p>
+                  ) : (
+                    <ul className="space-y-2 max-h-64 overflow-auto">
+                      {notices.map((notice) => (
+                        <li key={notice.id} className="text-sm text-slate-700 border-b border-tdcp-border pb-2">
+                          {notice.text}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="hidden sm:block text-right">
               <p className="text-sm font-semibold text-tdcp-navy">{user?.username}</p>
               <p className="text-xs text-slate-500">{user?.roleName}</p>

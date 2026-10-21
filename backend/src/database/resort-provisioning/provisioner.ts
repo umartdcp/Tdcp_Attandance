@@ -12,6 +12,8 @@ export interface CreateResortInput {
   name: string;
   locationType?: 'head_office' | 'regional_office' | 'resort' | 'other';
   address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   contactPhone?: string | null;
   contactEmail?: string | null;
   attendanceConfig?: Record<string, unknown> | null;
@@ -163,10 +165,10 @@ export async function createResortWithTables(input: CreateResortInput): Promise<
     await execute(
       `INSERT INTO resorts (
         id, organization_id, region_id, code, name, location_type, table_prefix,
-        address, contact_phone, contact_email, status, attendance_config
+        address, latitude, longitude, contact_phone, contact_email, status, attendance_config
       ) VALUES (
         :id, :organizationId, :regionId, :code, :name, :locationType, :prefix,
-        :address, :contactPhone, :contactEmail, 'provisioning', :attendanceConfig
+        :address, :latitude, :longitude, :contactPhone, :contactEmail, 'provisioning', :attendanceConfig
       )`,
       {
         id,
@@ -177,6 +179,8 @@ export async function createResortWithTables(input: CreateResortInput): Promise<
         locationType: input.locationType ?? 'resort',
         prefix,
         address: input.address ?? null,
+        latitude: input.latitude ?? null,
+        longitude: input.longitude ?? null,
         contactPhone: input.contactPhone ?? null,
         contactEmail: input.contactEmail ?? null,
         attendanceConfig: input.attendanceConfig ? JSON.stringify(input.attendanceConfig) : null,

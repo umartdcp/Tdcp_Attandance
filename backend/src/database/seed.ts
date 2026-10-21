@@ -71,6 +71,26 @@ const ROLES: Array<{ code: string; name: string; permissions: string[] }> = [
     permissions: ['locations.view', 'employees.view', 'attendance.view', 'reports.view', 'audit.view'],
   },
   { code: 'EMPLOYEE', name: 'Employee', permissions: ['attendance.view', 'leave.apply'] },
+  { code: 'ADMIN', name: 'Admin', permissions: PERMISSIONS.map((p) => p.code) },
+  {
+    code: 'HR',
+    name: 'HR',
+    permissions: [
+      'locations.view',
+      'employees.view',
+      'employees.manage',
+      'attendance.view',
+      'reports.view',
+      'shifts.manage',
+      'leave.apply',
+      'leave.approve',
+    ],
+  },
+  {
+    code: 'FINANCE',
+    name: 'Finance',
+    permissions: ['employees.view', 'attendance.view', 'reports.view', 'audit.view'],
+  },
 ];
 
 const REGIONS = [
@@ -179,12 +199,39 @@ async function seedReferenceData(): Promise<{
     }
   }
 
-  const departmentId = await ensureByCode('departments', 'ADMIN', async (id) => {
+  const departments = [
+    { code: 'ADMIN', name: 'Admin' },
+    { code: 'CONSULTANT', name: 'Consultant' },
+    { code: 'EVENTS', name: 'Events' },
+    { code: 'FINANCE', name: 'Finance' },
+    { code: 'GEN_TRANSPORT', name: 'General & Transport' },
+    { code: 'HR', name: 'HR' },
+    { code: 'ITHM_LHR', name: 'ITHM Lahore' },
+    { code: 'LEGAL', name: 'Legal' },
+    { code: 'MARKETING', name: 'Marketing' },
+    { code: 'MD_STAFF', name: 'MD staff' },
+    { code: 'OPERATIONS', name: 'Operations' },
+    { code: 'PMU', name: 'PMU' },
+    { code: 'REGISTRAR_ITHM', name: 'Registrar ITHM' },
+    { code: 'IT', name: 'IT' },
+    { code: 'PND', name: 'PND' },
+    { code: 'PNP', name: 'PNP' },
+    { code: 'P_AND_P', name: 'P&P' },
+  ];
+  let departmentId = '';
+  for (const department of departments) {
+    const id = await ensureByCode('departments', department.code, async (newId) => {
+      await execute(
+        `INSERT INTO departments (id, code, name) VALUES (:id, :code, :name)`,
+        { id: newId, code: department.code, name: department.name }
+      );
+    });
     await execute(
-      `INSERT INTO departments (id, code, name) VALUES (:id, 'ADMIN', 'Administration')`,
-      { id }
+      `UPDATE departments SET name = :name, status = 'active' WHERE code = :code`,
+      { name: department.name, code: department.code }
     );
-  });
+    if (department.code === 'ADMIN') departmentId = id;
+  }
 
   const shiftId = await ensureByCode('shifts', 'GENERAL', async (id) => {
     await execute(
@@ -268,6 +315,7 @@ async function seedEmployees(
   departmentId: string,
   leaveTypeIds: string[]
 ): Promise<Array<{ id: string; code: string; resortCode: string; deviceUserId: string }>> {
+  return [];
   const samples = [
     { code: 'TDCP-1001', firstName: 'Ayesha', lastName: 'Khan', resortCode: 'HO_LHR', designation: 'HR Officer', deviceUserId: '1001' },
     { code: 'TDCP-1002', firstName: 'Bilal', lastName: 'Ahmed', resortCode: 'PATRIATA', designation: 'Resort Supervisor', deviceUserId: '1002' },
@@ -349,6 +397,7 @@ async function seedDeviceAndAttendance(
   employees: Array<{ id: string; code: string; resortCode: string; deviceUserId: string }>,
   shiftId: string
 ): Promise<void> {
+  return;
   const today = todayKarachi();
   const adapters = await query<RowDataPacket[]>(
     `SELECT id FROM device_adapters WHERE code = 'generic_csv' LIMIT 1`
@@ -429,11 +478,9 @@ async function seedDeviceAndAttendance(
 }
 
 async function main(): Promise<void> {
-  const { regionIds, roleIds, shiftId, departmentId, leaveTypeIds } = await seedReferenceData();
-  const resortIds = await seedLocations(regionIds);
-  const employees = await seedEmployees(resortIds, departmentId, leaveTypeIds);
+  const { regionIds, roleIds } = await seedReferenceData();
+  await seedLocations(regionIds);
   await seedAdmin(roleIds.SUPER_ADMIN);
-  await seedDeviceAndAttendance(resortIds, employees, shiftId);
   logger.info('Seed complete');
   logger.info('Super admin username: superadmin');
   logger.info('Super admin password: ChangeMe@TDCP2026 — change this after first login');

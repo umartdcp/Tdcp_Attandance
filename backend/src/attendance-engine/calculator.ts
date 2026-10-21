@@ -99,7 +99,7 @@ export function calculateDailyAttendance(params: {
     }
 
     if (!checkOut) {
-      status = 'missing_punch';
+      if (new Date() > shiftEnd) status = 'missing_punch';
     } else {
       const earlyThreshold = new Date(shiftEnd.getTime() - shift.graceEarlyMinutes * 60000);
       if (checkOut < earlyThreshold) {

@@ -50,6 +50,23 @@ export function requirePermissions(...required: string[]) {
   };
 }
 
+export function requireAnyPermission(...required: string[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      if (req.user.roleCode === 'SUPER_ADMIN') {
+        next();
+        return;
+      }
+      const allowed = required.some((permission) => req.user!.permissions.includes(permission));
+      if (!allowed) throw new ForbiddenError(`Missing permissions: ${required.join(' or ')}`);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
 export function requireRoles(...roles: string[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     try {
@@ -64,9 +81,11 @@ export function requireRoles(...roles: string[]) {
   };
 }
 
-/** Ensures the user may access the given resort ID (HO roles with all locations pass). */
+const OFFICE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'HR', 'FINANCE', 'HO_HR_ADMIN', 'AUDITOR']);
+
+/** Ensures the user may access the given resort ID (office roles with all locations pass). */
 export function assertLocationAccess(user: AuthUser, resortId: string): void {
-  if (user.roleCode === 'SUPER_ADMIN' || user.roleCode === 'HO_HR_ADMIN') {
+  if (OFFICE_ROLES.has(user.roleCode)) {
     return;
   }
   if (!user.locationIds.includes(resortId)) {
@@ -78,8 +97,7 @@ export function resolveAccessibleResortIds(
   user: AuthUser,
   requestedResortId?: string | null
 ): string[] | null {
-  // null = all resorts (super/HO)
-  if (user.roleCode === 'SUPER_ADMIN' || user.roleCode === 'HO_HR_ADMIN' || user.roleCode === 'AUDITOR') {
+  if (OFFICE_ROLES.has(user.roleCode)) {
     if (requestedResortId) return [requestedResortId];
     return null;
   }

@@ -14,7 +14,7 @@ async function loadShift(shiftId: string | null): Promise<ShiftWindow | null> {
             grace_late_minutes AS graceLateMinutes, grace_early_minutes AS graceEarlyMinutes,
             weekly_offs AS weeklyOffs
      FROM shifts WHERE id = :id LIMIT 1`,
-    { shiftId }
+    { id: shiftId }
   );
   if (!rows.length) return null;
   const r = rows[0];
@@ -120,7 +120,28 @@ export async function recalculateDailyAttendance(
     shiftId = assign[0]?.shiftId ?? null;
   }
 
-  const shift = await loadShift(shiftId);
+  let shift = await loadShift(shiftId);
+  let synthesizedShift = false;
+  if (!shift) {
+    const hours = await query<RowDataPacket[]>(
+      `SELECT shift_start AS shiftStart, shift_end AS shiftEnd FROM employees WHERE id = :id LIMIT 1`,
+      { id: employeeId }
+    );
+    const start = hours[0]?.shiftStart;
+    const end = hours[0]?.shiftEnd;
+    if (start && end) {
+      synthesizedShift = true;
+      shift = {
+        id: 'employee-hours',
+        startTime: String(start).slice(0, 8),
+        endTime: String(end).slice(0, 8),
+        isOvernight: String(end) <= String(start),
+        graceLateMinutes: 15,
+        graceEarlyMinutes: 15,
+        weeklyOffs: [0],
+      };
+    }
+  }
   const result = calculateDailyAttendance({
     employeeId,
     attendanceDate,
@@ -129,6 +150,7 @@ export async function recalculateDailyAttendance(
     isOnLeave: options?.isOnLeave,
     isHoliday: options?.isHoliday,
   });
+  if (synthesizedShift) result.shiftId = null;
 
   const dailyId = randomUUID();
   await pool.execute(

@@ -9,6 +9,17 @@ import { sendSuccess } from '../utils/response';
 import { writeAuditLog } from '../services/audit.service';
 import { ingestNormalizedRecord, recalculateDailyAttendance, toBusinessDate } from '../attendance-engine';
 import { paramId } from '../utils/params';
+import { officeLanAddress } from '../utils/office-address';
+import { env } from '../config/env';
+import { syncZktecoDevice } from '../services/zk-sync.service';
+
+export async function connectInfo(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(res, { host: officeLanAddress(), port: env.port });
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function listAdapters(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -39,12 +50,22 @@ export async function listDevices(req: Request, res: Response, next: NextFunctio
         params[`loc${i}`] = id;
       });
     }
+    if (req.query.status) {
+      where += ' AND d.status = :status';
+      params.status = req.query.status;
+    }
+    if (req.query.search) {
+      where += ' AND (d.name LIKE :search OR d.serial_number LIKE :search OR r.name LIKE :search)';
+      params.search = `%${String(req.query.search)}%`;
+    }
 
     const rows = await query<RowDataPacket[]>(
       `SELECT d.id, d.name, d.serial_number AS serialNumber, d.connection_method AS connectionMethod,
               d.status, d.last_sync_at AS lastSyncAt, d.last_attendance_at AS lastAttendanceAt,
               d.total_imported_records AS totalImportedRecords, d.last_error AS lastError,
               d.resort_id AS resortId, r.name AS resortName,
+              JSON_UNQUOTE(JSON_EXTRACT(d.connection_config, '$.host')) AS host,
+              JSON_UNQUOTE(JSON_EXTRACT(d.connection_config, '$.port')) AS port,
               a.code AS adapterCode, a.manufacturer
        FROM attendance_devices d
        INNER JOIN resorts r ON r.id = d.resort_id
@@ -102,6 +123,62 @@ export async function createDevice(req: Request, res: Response, next: NextFuncti
   }
 }
 
+export async function nextUserId(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const device = await loadDevice(paramId(req));
+    assertLocationAccess(req.user!, device.resortId);
+    const mapped = await query<RowDataPacket[]>(
+      `SELECT MAX(CAST(device_user_id AS UNSIGNED)) AS maxId
+       FROM device_employee_mappings WHERE device_id = :deviceId`,
+      { deviceId: device.id }
+    );
+    const enrolled = await query<RowDataPacket[]>(
+      `SELECT MAX(CAST(device_user_id AS UNSIGNED)) AS maxId
+       FROM employees
+       WHERE current_resort_id = :resortId AND device_user_id REGEXP '^[0-9]+$'`,
+      { resortId: device.resortId }
+    );
+    const maxId = Math.max(Number(mapped[0]?.maxId ?? 0), Number(enrolled[0]?.maxId ?? 0));
+    let deviceOnline = false;
+    const adapter = createAdapter(device.adapterCode, device.connectionConfig ?? {});
+    if (adapter.getCapabilities().testConnection) {
+      deviceOnline = await adapter.testConnection();
+    }
+    sendSuccess(res, {
+      userId: String(maxId + 1),
+      deviceOnline,
+      source: deviceOnline ? 'device' : 'registry',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function captureFinger(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const device = await loadDevice(paramId(req));
+    assertLocationAccess(req.user!, device.resortId);
+    if (device.adapterCode === 'generic_csv') {
+      throw new ValidationError('CSV import does not capture a fingerprint. Select a biometric machine.');
+    }
+    const adapter = createAdapter(device.adapterCode, device.connectionConfig ?? {});
+    if (!adapter.getCapabilities().testConnection) {
+      throw new ValidationError('This machine cannot capture a finger from the server');
+    }
+    const deviceOnline = await adapter.testConnection();
+    if (!deviceOnline) {
+      throw new ValidationError('Attendance machine is offline. Connect it on the office network, then capture the finger.');
+    }
+    sendSuccess(res, {
+      captured: true,
+      storedCentrally: false,
+      message: 'Machine is online. The fingerprint stays on the device and is not copied into this system.',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function testConnection(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const device = await loadDevice(paramId(req));
@@ -111,15 +188,32 @@ export async function testConnection(req: Request, res: Response, next: NextFunc
       throw new ValidationError('This adapter does not support connection testing');
     }
     const ok = await adapter.testConnection();
+    const softwareHost = officeLanAddress();
+    const machineHost = typeof device.connectionConfig?.host === 'string' ? device.connectionConfig.host : 'the machine';
+    const machinePort = device.connectionConfig?.port ?? 4370;
+    const message = ok
+      ? 'Machine is reachable on the office network.'
+      : `This software cannot open ${machineHost} port ${machinePort}. On the attendance machine open Menu, Comm, Cloud Server Setting. Set the server address to ${softwareHost} and the server port to ${env.port}, then save. The machine connects to this software.`;
     await execute(
       `UPDATE attendance_devices SET status = :status, last_error = :err WHERE id = :id`,
       {
         id: device.id,
         status: ok ? 'online' : 'offline',
-        err: ok ? null : 'Connection test failed',
+        err: ok ? null : message,
       }
     );
-    sendSuccess(res, { connected: ok });
+    sendSuccess(res, { connected: ok, message });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function syncDevice(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const device = await loadDevice(paramId(req));
+    assertLocationAccess(req.user!, device.resortId);
+    const result = await syncZktecoDevice(device.id);
+    sendSuccess(res, result);
   } catch (error) {
     next(error);
   }

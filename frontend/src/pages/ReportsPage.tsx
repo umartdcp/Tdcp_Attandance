@@ -11,7 +11,7 @@ export default function ReportsPage() {
           registry — clients never select raw table names.
         </p>
       </div>
-      <AttendancePage />
+      <AttendancePage heading="Attendance report" />
     </div>
   );
 }

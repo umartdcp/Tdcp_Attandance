@@ -47,6 +47,42 @@ export async function update(req: Request, res: Response, next: NextFunction): P
   }
 }
 
+export async function reverseGeocode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'lat and lng are required' },
+      });
+      return;
+    }
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`;
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'TDCP-Attendance/1.0 (office attendance setup)',
+      },
+    });
+    if (!response.ok) {
+      res.status(502).json({
+        success: false,
+        error: { code: 'GEOCODE_FAILED', message: 'Could not look up that location' },
+      });
+      return;
+    }
+    const body = (await response.json()) as { display_name?: string };
+    sendSuccess(res, {
+      address: body.display_name ?? '',
+      latitude: lat,
+      longitude: lng,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function regions(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const rows = await resortService.listRegions();

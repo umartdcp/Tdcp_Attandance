@@ -51,12 +51,10 @@ Seeded locations include Head Office Lahore, Patriata, Changa Manga, Hiran Minar
 
 ### 4. Run locally
 
-```bash
-# Terminal 1
-cd backend && npm run dev
+From the repo root, start the API and web app together:
 
-# Terminal 2
-cd frontend && npm run dev
+```bash
+npm run dev
 ```
 
 - API: http://localhost:4000/api/v1/health  

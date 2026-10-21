@@ -10,6 +10,8 @@ import AttendancePage from './pages/AttendancePage';
 import DevicesPage from './pages/DevicesPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
+import SetupPage from './pages/SetupPage';
+import UsersPage from './pages/UsersPage';
 
 export default function App() {
   return (
@@ -21,11 +23,14 @@ export default function App() {
             <Route element={<DashboardLayout />}>
               <Route index element={<DashboardPage />} />
               <Route path="employees" element={<EmployeesPage />} />
+              <Route path="setup" element={<SetupPage />} />
+              <Route path="sites" element={<ResortsPage />} />
               <Route path="resorts" element={<ResortsPage />} />
               <Route path="attendance" element={<AttendancePage />} />
               <Route path="devices" element={<DevicesPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="users" element={<UsersPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

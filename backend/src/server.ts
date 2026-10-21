@@ -3,10 +3,12 @@ import { env } from './config/env';
 import { closePool, pingDatabase } from './config/database';
 import { startSyncScheduler } from './jobs/sync-scheduler';
 import { logger } from './utils/logger';
+import { officeLanAddress } from './utils/office-address';
 
 const server = app.listen(env.port, () => {
   logger.info(`TDCP API listening on port ${env.port} (${env.nodeEnv})`);
   logger.info(`API prefix: ${env.apiPrefix}`);
+  logger.info(`Attendance machine connects to http://${officeLanAddress()}:${env.port}/iclock/cdata`);
 });
 
 void pingDatabase().then((ok) => {

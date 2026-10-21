@@ -1,4 +1,19 @@
+import { useMemo, useState } from 'react';
+import { fieldClass, FilterField, Filters } from '../components/Filters';
+
 export default function SettingsPage() {
+  const [search, setSearch] = useState('');
+  const rows = useMemo(
+    () =>
+      [
+        ['Timezone', 'Business dates use Asia/Karachi.', 'Asia/Karachi'],
+        ['Mobile attendance', 'Stays off until Head Office turns it on.', 'Disabled'],
+        ['Grace period', 'Late and early grace is set on each employee shift.', '15 minutes'],
+        ['Fingerprints', 'Templates stay on the attendance machine.', 'Not stored here'],
+      ].filter((row) => row.join(' ').toLowerCase().includes(search.toLowerCase())),
+    [search]
+  );
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
@@ -6,27 +21,17 @@ export default function SettingsPage() {
         <p className="text-sm text-slate-500 mt-1">Configurable policies — not invented TDCP rules</p>
       </div>
 
+      <Filters>
+        <FilterField label="Search settings">
+          <input className={fieldClass} value={search} placeholder="Timezone, finger, mobile" onChange={(e) => setSearch(e.target.value)} />
+        </FilterField>
+      </Filters>
+
       <div className="rounded-xl bg-white border border-tdcp-border p-5 space-y-4 shadow-sm">
-        <SettingRow
-          title="Timezone"
-          description="Business date calculations use Asia/Karachi."
-          value="Asia/Karachi"
-        />
-        <SettingRow
-          title="Mobile attendance"
-          description="Disabled by default. Enable only when Head Office HR authorizes."
-          value="Disabled"
-        />
-        <SettingRow
-          title="Grace periods"
-          description="Default late/early grace is configurable per shift and resort."
-          value="15 minutes (default)"
-        />
-        <SettingRow
-          title="Biometric templates"
-          description="Fingerprint/face templates are not stored centrally unless explicitly authorized."
-          value="Not stored"
-        />
+        {rows.map(([title, description, value]) => (
+          <SettingRow key={title} title={title} description={description} value={value} />
+        ))}
+        {!rows.length && <p className="text-sm text-slate-500">No settings match that filter</p>}
       </div>
     </div>
   );

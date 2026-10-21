@@ -14,8 +14,14 @@ export interface CreateEmployeeInput {
   phone?: string | null;
   designation?: string | null;
   departmentId?: string | null;
+  departmentName?: string | null;
   currentResortId: string;
   hireDate?: string | null;
+  gender?: 'male' | 'female' | 'other' | null;
+  deviceUserId?: string | null;
+  shiftStart?: string | null;
+  shiftEnd?: string | null;
+  fingerStatus?: 'not_captured' | 'captured' | 'failed';
 }
 
 export async function listEmployees(filters: {
@@ -23,11 +29,13 @@ export async function listEmployees(filters: {
   locationIds?: string[] | null;
   search?: string;
   status?: string;
+  departmentId?: string;
+  gender?: string;
   page?: number;
   limit?: number;
 }) {
   const page = Math.max(1, filters.page ?? 1);
-  const limit = Math.min(Math.max(1, filters.limit ?? 20), 100);
+  const limit = Math.min(Math.max(1, filters.limit ?? 20), 10000);
   const offset = (page - 1) * limit;
   const clauses: string[] = [];
   const params: Record<string, unknown> = {};
@@ -46,9 +54,17 @@ export async function listEmployees(filters: {
       params[`loc${i}`] = id;
     });
   }
+  if (filters.departmentId) {
+    clauses.push('e.department_id = :departmentId');
+    params.departmentId = filters.departmentId;
+  }
+  if (filters.gender) {
+    clauses.push('e.gender = :gender');
+    params.gender = filters.gender;
+  }
   if (filters.search) {
     clauses.push(
-      `(e.employee_code LIKE :search OR e.first_name LIKE :search OR e.last_name LIKE :search OR e.email LIKE :search)`
+      `(e.employee_code LIKE :search OR e.device_user_id LIKE :search OR e.first_name LIKE :search OR e.last_name LIKE :search OR e.email LIKE :search)`
     );
     params.search = `%${filters.search}%`;
   }
@@ -60,7 +76,10 @@ export async function listEmployees(filters: {
   );
   const rows = await query<RowDataPacket[]>(
     `SELECT e.id, e.employee_code AS employeeCode, e.first_name AS firstName, e.last_name AS lastName,
-            e.designation, e.email, e.phone, e.status, e.current_resort_id AS currentResortId,
+            e.designation, e.email, e.phone, e.gender, e.status, e.current_resort_id AS currentResortId,
+            e.department_id AS departmentId,
+            e.device_user_id AS deviceUserId, e.shift_start AS shiftStart, e.shift_end AS shiftEnd,
+            e.finger_status AS fingerStatus,
             r.name AS resortName, d.name AS departmentName, e.hire_date AS hireDate
      FROM employees e
      LEFT JOIN resorts r ON r.id = e.current_resort_id
@@ -82,6 +101,8 @@ export interface EmployeeRecord extends RowDataPacket {
   designation: string | null;
   department_id: string | null;
   current_resort_id: string | null;
+  gender?: string | null;
+  status?: string;
   resortName?: string;
   departmentName?: string;
   postings?: RowDataPacket[];
@@ -126,13 +147,17 @@ export async function createEmployee(input: CreateEmployeeInput, actorUserId: st
   const id = randomUUID();
   const postingId = randomUUID();
   const code = input.employeeCode.trim().toUpperCase();
+  const departmentId = await resolveDepartment(input.departmentId, input.departmentName);
+  const shiftStart = normalizeTime(input.shiftStart);
+  const shiftEnd = normalizeTime(input.shiftEnd);
 
   await withTransaction(async (conn) => {
     await conn.execute(
       `INSERT INTO employees (
-        id, employee_code, first_name, last_name, father_name, cnic, email, phone,
+        id, employee_code, first_name, last_name, father_name, cnic, email, phone, gender,
+        device_user_id, shift_start, shift_end, finger_status,
         designation, department_id, current_resort_id, hire_date, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
       [
         id,
         code,
@@ -142,8 +167,13 @@ export async function createEmployee(input: CreateEmployeeInput, actorUserId: st
         input.cnic ?? null,
         input.email ?? null,
         input.phone ?? null,
+        input.gender ?? null,
+        input.deviceUserId ?? null,
+        shiftStart,
+        shiftEnd,
+        input.fingerStatus ?? 'not_captured',
         input.designation ?? null,
-        input.departmentId ?? null,
+        departmentId,
         input.currentResortId,
         input.hireDate ?? null,
       ]
@@ -156,11 +186,25 @@ export async function createEmployee(input: CreateEmployeeInput, actorUserId: st
         postingId,
         id,
         input.currentResortId,
-        input.departmentId ?? null,
+        departmentId,
         input.designation ?? null,
         input.hireDate ?? null,
       ]
     );
+
+    if (input.deviceUserId) {
+      await conn.execute(
+        `INSERT INTO device_employee_mappings (id, device_id, device_user_id, employee_id, is_active)
+         SELECT ?, d.id, ?, ?, 1
+         FROM attendance_devices d
+         WHERE d.resort_id = ? AND NOT EXISTS (
+           SELECT 1 FROM device_employee_mappings m
+           WHERE m.device_id = d.id AND m.device_user_id = ?
+         )
+         LIMIT 1`,
+        [randomUUID(), input.deviceUserId, id, input.currentResortId, input.deviceUserId]
+      );
+    }
   });
 
   await writeAuditLog({
@@ -253,4 +297,221 @@ export async function transferEmployee(
   });
 
   return getEmployeeById(employeeId);
+}
+
+export async function updateEmployeeDepartment(
+  employeeId: string,
+  departmentName: string,
+  actorUserId: string
+) {
+  const employee = await getEmployeeById(employeeId);
+  const departmentId = await resolveDepartment(null, departmentName);
+  await execute(`UPDATE employees SET department_id = :departmentId WHERE id = :id`, {
+    id: employeeId,
+    departmentId,
+  });
+  await execute(
+    `UPDATE employee_postings SET department_id = :departmentId
+     WHERE employee_id = :id AND is_current = 1`,
+    { id: employeeId, departmentId }
+  );
+  await writeAuditLog({
+    actorUserId,
+    action: 'employee.department',
+    entityType: 'employee',
+    entityId: employeeId,
+    resortId: employee.current_resort_id,
+    beforeData: { departmentId: employee.department_id },
+    afterData: { departmentId, departmentName: departmentName.trim() },
+  });
+  return getEmployeeById(employeeId);
+}
+
+export async function updateEmployeeFromReport(
+  employeeId: string,
+  patch: {
+    firstName?: string;
+    lastName?: string;
+    departmentName?: string;
+    designation?: string;
+    gender?: 'male' | 'female' | 'other';
+    shiftStart?: string;
+    shiftEnd?: string;
+  }
+) {
+  const sets: string[] = [];
+  const params: Record<string, unknown> = { id: employeeId };
+  if (patch.firstName) {
+    sets.push('first_name = :firstName');
+    params.firstName = patch.firstName.slice(0, 100);
+  }
+  if (patch.lastName) {
+    sets.push('last_name = :lastName');
+    params.lastName = patch.lastName.slice(0, 100);
+  }
+  if (patch.departmentName) {
+    sets.push('department_id = :departmentId');
+    params.departmentId = await resolveDepartment(null, patch.departmentName);
+  }
+  if (patch.designation) {
+    sets.push('designation = :designation');
+    params.designation = patch.designation.slice(0, 128);
+  }
+  if (patch.gender) {
+    sets.push('gender = :gender');
+    params.gender = patch.gender;
+  }
+  if (patch.shiftStart) {
+    sets.push('shift_start = :shiftStart');
+    params.shiftStart = normalizeTime(patch.shiftStart);
+  }
+  if (patch.shiftEnd) {
+    sets.push('shift_end = :shiftEnd');
+    params.shiftEnd = normalizeTime(patch.shiftEnd);
+  }
+  if (!sets.length) return;
+  await execute(`UPDATE employees SET ${sets.join(', ')} WHERE id = :id`, params);
+  if (params.departmentId) {
+    await execute(
+      `UPDATE employee_postings SET department_id = :departmentId
+       WHERE employee_id = :id AND is_current = 1`,
+      { id: employeeId, departmentId: params.departmentId }
+    );
+  }
+}
+
+export async function updateEmployeeGender(
+  employeeId: string,
+  gender: 'male' | 'female' | 'other' | null,
+  actorUserId: string
+) {
+  const employee = await getEmployeeById(employeeId);
+  await execute(`UPDATE employees SET gender = :gender WHERE id = :id`, { id: employeeId, gender });
+  await writeAuditLog({
+    actorUserId,
+    action: 'employee.gender',
+    entityType: 'employee',
+    entityId: employeeId,
+    resortId: employee.current_resort_id,
+    beforeData: { gender: employee.gender ?? null },
+    afterData: { gender },
+  });
+}
+
+export async function updateEmployee(
+  employeeId: string,
+  input: {
+    firstName: string;
+    lastName: string;
+    departmentName?: string | null;
+    designation?: string | null;
+    gender?: 'male' | 'female' | 'other' | null;
+    shiftStart?: string | null;
+    shiftEnd?: string | null;
+    currentResortId?: string | null;
+  },
+  actorUserId: string
+) {
+  const employee = await getEmployeeById(employeeId);
+  if (input.currentResortId) {
+    const resort = await query<RowDataPacket[]>(
+      `SELECT id FROM resorts WHERE id = :id AND status = 'active' LIMIT 1`,
+      { id: input.currentResortId }
+    );
+    if (!resort.length) throw new ValidationError('Invalid or inactive site');
+  }
+  const departmentId = input.departmentName ? await resolveDepartment(null, input.departmentName) : null;
+  await execute(
+    `UPDATE employees SET
+      first_name = :firstName,
+      last_name = :lastName,
+      department_id = :departmentId,
+      designation = :designation,
+      gender = :gender,
+      shift_start = :shiftStart,
+      shift_end = :shiftEnd,
+      current_resort_id = COALESCE(:resortId, current_resort_id)
+     WHERE id = :id`,
+    {
+      id: employeeId,
+      firstName: input.firstName.trim().slice(0, 100),
+      lastName: input.lastName.trim().slice(0, 100),
+      departmentId,
+      designation: input.designation?.trim() || null,
+      gender: input.gender ?? null,
+      shiftStart: normalizeTime(input.shiftStart),
+      shiftEnd: normalizeTime(input.shiftEnd),
+      resortId: input.currentResortId ?? null,
+    }
+  );
+  await execute(
+    `UPDATE employee_postings SET
+      department_id = :departmentId,
+      designation = :designation,
+      resort_id = COALESCE(:resortId, resort_id)
+     WHERE employee_id = :id AND is_current = 1`,
+    {
+      id: employeeId,
+      departmentId,
+      designation: input.designation?.trim() || null,
+      resortId: input.currentResortId ?? null,
+    }
+  );
+  await writeAuditLog({
+    actorUserId,
+    action: 'employee.update',
+    entityType: 'employee',
+    entityId: employeeId,
+    resortId: input.currentResortId ?? employee.current_resort_id,
+    beforeData: {
+      firstName: employee.first_name,
+      lastName: employee.last_name,
+      departmentId: employee.department_id,
+    },
+    afterData: input,
+  });
+  return getEmployeeById(employeeId);
+}
+
+export async function deactivateEmployee(employeeId: string, actorUserId: string) {
+  const employee = await getEmployeeById(employeeId);
+  await execute(`UPDATE employees SET status = 'inactive' WHERE id = :id`, { id: employeeId });
+  await execute(`UPDATE device_employee_mappings SET is_active = 0 WHERE employee_id = :id`, { id: employeeId });
+  await writeAuditLog({
+    actorUserId,
+    action: 'employee.delete',
+    entityType: 'employee',
+    entityId: employeeId,
+    resortId: employee.current_resort_id,
+    beforeData: { status: employee.status },
+    afterData: { status: 'inactive' },
+  });
+}
+
+export async function listDepartments() {
+  return query<RowDataPacket[]>(
+    `SELECT id, code, name, resort_id AS resortId, status
+     FROM departments WHERE status = 'active' ORDER BY name`
+  );
+}
+
+async function resolveDepartment(departmentId?: string | null, departmentName?: string | null) {
+  if (departmentId) return departmentId;
+  const name = departmentName?.trim();
+  if (!name) return null;
+  const existing = await query<RowDataPacket[]>(
+    `SELECT id FROM departments WHERE name = :name LIMIT 1`,
+    { name }
+  );
+  if (existing.length) return String(existing[0].id);
+  const id = randomUUID();
+  const base = name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'DEPT';
+  const code = `${base}_${id.slice(0, 6).toUpperCase()}`;
+  await execute(`INSERT INTO departments (id, code, name) VALUES (:id, :code, :name)`, { id, code, name });
+  return id;
+}
+
+function normalizeTime(value?: string | null) {
+  if (!value) return null;
+  return value.length === 5 ? `${value}:00` : value;
 }

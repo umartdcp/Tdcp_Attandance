@@ -15,7 +15,7 @@ const CATALOG: AdapterInfo[] = [
     code: 'zkteco_pull',
     manufacturer: 'ZKTeco',
     verified: false,
-    notes: 'TCP reachability on port 4370 is implemented. Attendance log protocol is not verified.',
+    notes: 'The machine connects to this software through Cloud Server / ADMS. Direct port 4370 is used only when the machine accepts a connection.',
   },
   {
     code: 'hikvision',

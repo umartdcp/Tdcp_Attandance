@@ -46,11 +46,23 @@ export interface Employee {
   designation?: string;
   email?: string;
   phone?: string;
+  gender?: string | null;
   status: string;
   currentResortId?: string;
   resortName?: string;
-  departmentName?: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  deviceUserId?: string | null;
+  shiftStart?: string | null;
+  shiftEnd?: string | null;
+  fingerStatus?: string;
   hireDate?: string;
+}
+
+export interface Department {
+  id: string;
+  code: string;
+  name: string;
 }
 
 export interface DashboardStats {

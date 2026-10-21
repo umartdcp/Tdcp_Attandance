@@ -92,13 +92,15 @@ export async function consolidatedAttendanceReport(filters: ReportFilters) {
 
     const sql = `SELECT da.id, da.employee_id AS employeeId, e.employee_code AS employeeCode,
               CONCAT(e.first_name, ' ', e.last_name) AS employeeName,
-              e.designation, e.department_id AS departmentId,
+              e.designation, e.department_id AS departmentId, dep.name AS departmentName,
               da.attendance_date AS attendanceDate, da.status,
               da.check_in AS checkIn, da.check_out AS checkOut,
               da.working_minutes AS workingMinutes, da.late_minutes AS lateMinutes,
+              da.early_departure_minutes AS earlyMinutes,
               ? AS resortId, ? AS resortName, ? AS resortCode
        FROM \`${resort.dailyTable}\` da
        INNER JOIN employees e ON e.id = da.employee_id
+       LEFT JOIN departments dep ON dep.id = e.department_id
        WHERE ${clauses.join(' AND ')}
        ORDER BY da.attendance_date, e.last_name`;
     const [rows] = await pool.execute<RowDataPacket[]>(sql, [
